@@ -114,6 +114,83 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState<'setup' | 'macos'>('setup');
+
+  const nextAssignment = assignments.length > 0 ? assignments[0] : null;
+
+  const macosScript = `
+import requests
+import os
+import sys
+from datetime import datetime
+
+# ==========================================
+# 1. 설정
+# ==========================================
+CANVAS_DOMAIN = '${settings?.canvasUrl || 'https://learning.hanyang.ac.kr'}'
+ACCESS_TOKEN = '${settings?.apiToken || 'YOUR_ACCESS_TOKEN_HERE'}'
+
+def send_macos_notification(title, message):
+    """macOS osascript를 사용하여 네이티브 알림을 보냅니다."""
+    command = f'display notification "{message}" with title "{title}" sound name "Glass"'
+    os.system(f"osascript -e '{command}'")
+
+def get_upcoming_assignments():
+    """Canvas API를 호출하여 다가오는 할 일 목록을 가져옵니다."""
+    endpoint = f"{CANVAS_DOMAIN}/api/v1/users/self/todo"
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}"
+    }
+
+    try:
+        response = requests.get(endpoint, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        todo_list = response.json()
+        
+        assignments = []
+        for item in todo_list:
+            if item.get('type') == 'assignment' and 'assignment' in item:
+                assignment_data = item['assignment']
+                due_at = assignment_data.get('due_at')
+                if due_at:
+                    assignments.append({
+                        'name': assignment_data.get('name'),
+                        'due_at': datetime.strptime(due_at, '%Y-%m-%dT%H:%M:%SZ')
+                    })
+        
+        assignments.sort(key=lambda x: x['due_at'])
+        return assignments
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ API 호출 중 에러 발생: {e}")
+        return None
+    except Exception as e:
+        print(f"❌ 알 수 없는 에러 발생: {e}")
+        return None
+
+def main():
+    print(f"🚀 {CANVAS_DOMAIN}에서 과제 데이터를 가져오는 중...")
+    assignments = get_upcoming_assignments()
+    
+    if assignments is None:
+        send_macos_notification("Canvas 에러", "데이터를 가져오지 못했습니다. 토큰을 확인하세요.")
+        return
+
+    if not assignments:
+        print("✅ 남은 과제가 없습니다!")
+        send_macos_notification("Canvas 알림", "현재 남은 과제가 없습니다. 편히 쉬세요!")
+    else:
+        urgent = assignments[0]
+        name = urgent['name']
+        due_str = urgent['due_at'].strftime('%m월 %d일 %H:%M')
+        message = f"가장 급한 과제: {name}\\n마감일: {due_str}"
+        print(f"🔔 알림 전송: {message}")
+        send_macos_notification("Canvas 마감 임박!", message)
+
+if __name__ == "__main__":
+    main()
+`.trim();
   const [error, setError] = useState<string | null>(null);
 
   // --- Auth & Initial Data ---
@@ -441,6 +518,47 @@ export default function App() {
           </motion.div>
         )}
 
+        {/* Next Deadline Highlight */}
+        {nextAssignment && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <div className="relative overflow-hidden rounded-2xl bg-zinc-900 p-6 text-white shadow-xl sm:p-8">
+              <div className="relative z-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400">
+                    <Bell className="h-3 w-3 text-orange-400" />
+                    <span>Next Deadline</span>
+                  </div>
+                  <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{nextAssignment.name}</h2>
+                  <div className="flex items-center gap-4 text-sm text-zinc-400">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-4 w-4" />
+                      <span>{format(parseISO(nextAssignment.due_at!), 'MMMM d, h:mm a')}</span>
+                    </div>
+                    <div className="rounded-full bg-orange-500/10 px-3 py-0.5 text-xs font-semibold text-orange-400">
+                      {formatDistanceToNow(parseISO(nextAssignment.due_at!), { addSuffix: true })}
+                    </div>
+                  </div>
+                </div>
+                <a 
+                  href={nextAssignment.html_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-12 items-center justify-center rounded-xl bg-white px-6 text-sm font-bold text-zinc-900 transition-transform hover:scale-105 active:scale-95"
+                >
+                  Go to Assignment
+                </a>
+              </div>
+              {/* Decorative Background Element */}
+              <div className="absolute -right-12 -top-12 h-64 w-64 rounded-full bg-orange-500/10 blur-3xl" />
+              <div className="absolute -bottom-12 -left-12 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl" />
+            </div>
+          </motion.div>
+        )}
+
         {/* Dashboard Content */}
         <div className="grid gap-8 lg:grid-cols-3">
           {/* Left Column: Stats & Actions */}
@@ -574,49 +692,110 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md"
+              className="relative w-full max-w-2xl"
             >
-              <Card className="space-y-6">
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-bold tracking-tight">Hanyang Canvas Setup</h2>
-                  <p className="text-sm text-zinc-500">Connect your Hanyang University Canvas account to start tracking assignments.</p>
-                </div>
-                <form onSubmit={saveSettings} className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Canvas URL</label>
-                    <input 
-                      name="canvasUrl"
-                      required
-                      placeholder="https://learning.hanyang.ac.kr/"
-                      defaultValue={settings?.canvasUrl || "https://learning.hanyang.ac.kr/"}
-                      className="w-full rounded-lg border border-zinc-200 px-4 py-2 text-sm focus:border-zinc-400 focus:outline-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">API Access Token</label>
-                    <input 
-                      name="apiToken"
-                      type="password"
-                      required
-                      placeholder="Paste your token here"
-                      defaultValue={settings?.apiToken}
-                      className="w-full rounded-lg border border-zinc-200 px-4 py-2 text-sm focus:border-zinc-400 focus:outline-none"
-                    />
-                    <p className="text-[10px] text-zinc-400">
-                      Find this in Canvas: Account &gt; Settings &gt; New Access Token
-                    </p>
-                  </div>
-                  <div className="flex gap-3 pt-2">
-                    {settings && (
-                      <Button type="button" variant="outline" className="flex-1" onClick={() => setShowSettings(false)}>
-                        Cancel
-                      </Button>
+              <Card className="overflow-hidden p-0">
+                <div className="flex border-b border-zinc-100">
+                  <button 
+                    onClick={() => setActiveTab('setup')}
+                    className={cn(
+                      "flex-1 py-4 text-sm font-bold transition-colors",
+                      activeTab === 'setup' ? "bg-zinc-50 text-zinc-900" : "text-zinc-400 hover:text-zinc-600"
                     )}
-                    <Button type="submit" className="flex-1">
-                      Save & Connect
-                    </Button>
-                  </div>
-                </form>
+                  >
+                    Canvas Setup
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('macos')}
+                    className={cn(
+                      "flex-1 py-4 text-sm font-bold transition-colors",
+                      activeTab === 'macos' ? "bg-zinc-50 text-zinc-900" : "text-zinc-400 hover:text-zinc-600"
+                    )}
+                  >
+                    macOS Integration
+                  </button>
+                </div>
+
+                <div className="p-6">
+                  {activeTab === 'setup' ? (
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <h2 className="text-2xl font-bold tracking-tight">Hanyang Canvas Setup</h2>
+                        <p className="text-sm text-zinc-500">Connect your Hanyang University Canvas account to start tracking assignments.</p>
+                      </div>
+                      <form onSubmit={saveSettings} className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Canvas URL</label>
+                          <input 
+                            name="canvasUrl"
+                            required
+                            placeholder="https://learning.hanyang.ac.kr/"
+                            defaultValue={settings?.canvasUrl || "https://learning.hanyang.ac.kr/"}
+                            className="w-full rounded-lg border border-zinc-200 px-4 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">API Access Token</label>
+                          <input 
+                            name="apiToken"
+                            type="password"
+                            required
+                            placeholder="Paste your token here"
+                            defaultValue={settings?.apiToken}
+                            className="w-full rounded-lg border border-zinc-200 px-4 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                          />
+                          <p className="text-[10px] text-zinc-400">
+                            Find this in Canvas: Account &gt; Settings &gt; New Access Token
+                          </p>
+                        </div>
+                        <div className="flex gap-3 pt-2">
+                          {settings && (
+                            <Button type="button" variant="outline" className="flex-1" onClick={() => setShowSettings(false)}>
+                              Cancel
+                            </Button>
+                          )}
+                          <Button type="submit" className="flex-1">
+                            Save & Connect
+                          </Button>
+                        </div>
+                      </form>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <h2 className="text-2xl font-bold tracking-tight">macOS Desktop Notifications</h2>
+                        <p className="text-sm text-zinc-500">Use this Python script to get native macOS notifications on your desktop.</p>
+                      </div>
+                      <div className="relative">
+                        <pre className="max-h-[300px] overflow-y-auto rounded-lg bg-zinc-900 p-4 text-[10px] text-zinc-300">
+                          {macosScript}
+                        </pre>
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          className="absolute right-4 top-4"
+                          onClick={() => {
+                            navigator.clipboard.writeText(macosScript);
+                            alert("Script copied to clipboard!");
+                          }}
+                        >
+                          Copy Script
+                        </Button>
+                      </div>
+                      <div className="rounded-lg bg-blue-50 p-4 text-xs text-blue-700">
+                        <p className="font-bold">How to use:</p>
+                        <ol className="ml-4 mt-2 list-decimal space-y-1">
+                          <li>Install requests: <code className="bg-blue-100 px-1">pip install requests</code></li>
+                          <li>Save the script as <code className="bg-blue-100 px-1">canvas_notify.py</code></li>
+                          <li>Run it: <code className="bg-blue-100 px-1">python canvas_notify.py</code></li>
+                        </ol>
+                      </div>
+                      <Button variant="outline" className="w-full" onClick={() => setShowSettings(false)}>
+                        Close
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </Card>
             </motion.div>
           </div>
