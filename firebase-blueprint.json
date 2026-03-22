@@ -1,0 +1,49 @@
+{
+  "entities": {
+    "userSettings": {
+      "title": "User Settings",
+      "description": "User's Canvas LMS configuration and notification preferences.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The Firebase Auth UID of the user." },
+        "canvasUrl": { "type": "string", "description": "The base URL of the user's Canvas LMS instance." },
+        "apiToken": { "type": "string", "description": "The personal access token for the Canvas API." },
+        "notificationThresholds": { 
+          "type": "array", 
+          "items": { "type": "number" },
+          "description": "Hours before deadline to send notifications (e.g., [24, 1])."
+        }
+      },
+      "required": ["userId", "canvasUrl", "apiToken"]
+    },
+    "assignments": {
+      "title": "Tracked Assignments",
+      "description": "Cache of assignments and their notification status.",
+      "type": "object",
+      "properties": {
+        "assignmentId": { "type": "string", "description": "The unique ID from Canvas." },
+        "courseId": { "type": "string", "description": "The course ID from Canvas." },
+        "courseName": { "type": "string", "description": "The name of the course." },
+        "name": { "type": "string", "description": "The name of the assignment." },
+        "dueAt": { "type": "string", "format": "date-time", "description": "The deadline in ISO 8601 format." },
+        "userId": { "type": "string", "description": "The owner of this assignment record." },
+        "notifiedThresholds": { 
+          "type": "array", 
+          "items": { "type": "number" },
+          "description": "List of thresholds (hours) already notified for this assignment."
+        }
+      },
+      "required": ["assignmentId", "userId", "dueAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/settings/current": {
+      "schema": "userSettings",
+      "description": "The current settings for a specific user."
+    },
+    "/users/{userId}/assignments/{assignmentId}": {
+      "schema": "assignments",
+      "description": "Tracked assignments for a specific user."
+    }
+  }
+}

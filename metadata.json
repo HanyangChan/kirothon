@@ -1,0 +1,5 @@
+{
+  "name": "Canvas Assignment Tracker",
+  "description": "Track your Canvas LMS assignments, deadlines, and get notified before they are due.",
+  "requestFramePermissions": ["notifications"]
+}
