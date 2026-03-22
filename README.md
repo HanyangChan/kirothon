@@ -1,81 +1,127 @@
-# Hanyang Canvas Tracker 🎓
+# 다했냥 🐱 — Campus Deadline Agent
 
-한양대학교 학생들을 위한 Canvas LMS 과제 관리 및 푸시 알림 도구입니다.
+> *"정보를 모아주는 서비스가 아니라, 지금 해야 할 일을 결정해주는 서비스"*
 
-## 🚀 주요 기능
-- **실시간 과제 동기화**: 웹페이지에서 한양대학교 Canvas API를 통해 남은 과제 목록을 동기화합니다.
-- **마감 임박 하이라이트**: 가장 가까운 마감 기한을 대시보드 상단에 시각적으로 강조하여 보여줍니다.
-- **스마트폰 푸시 알림 연동**: `Pushover`와 Python 스크립트를 배포하여 스마트폰(iOS/Android)으로 언제 어디서든 과제 마감 알림을 즉시 받을 수 있습니다.
+**KIROTHON 13조** | 양민주 · 이찬희 · 채동민 · 황병찬
 
 ---
 
-## 🛠️ 개발 및 빌드 (Web App)
-이 프로젝트의 프론트엔드/백엔드는 React, Vite, Tailwind CSS 및 Firebase를 기반으로 구축되었습니다.
+## 💡 문제 인식
+
+학교생활의 일정은 LMS(Canvas), 학사 공지, 팀플 카톡방, 에브리타임 등 **여러 채널에 파편화**되어 있습니다.
+
+- 어떤 과제가 가장 급한지 **우선순위를 판단하기 어렵다**
+- 마감을 놓쳐서 뒤늦게 허둥지둥 제출한 경험이 있다
+- 팀플 일정, 동영상 강의 기한, 시험 날짜가 뒤죽박죽 섞여 있다
+
+**다했냥**은 이 문제를 에이전트 방식으로 해결합니다.
+
+---
+
+## ✨ 주요 기능
+
+### 📋 일정 통합 대시보드
+- **Canvas API 연동**: 한양대학교 Canvas LMS에서 과제·시험·동영상 강의를 자동으로 불러옵니다.
+- **섹션 자동 분류**: 키워드 기반으로 `시험 및 퀴즈`, `동영상 강의`, `일반 과제` 섹션을 자동으로 구분합니다.
+- **마감 임박 하이라이트**: 가장 급한 일정을 대시보드 상단에 전용 카드로 강조 표시합니다.
+- **공지사항 자동 수집**: 수강 중인 모든 과목의 최신 공지사항을 한 화면에 모아봅니다.
+
+### 📅 직접 등록한 일정
+Canvas 외의 **팀플 회의, 발표 준비, 스터디** 등 개인 일정을 직접 입력하고 관리합니다.
+- 제목 / 카테고리(팀플·발표·스터디·기타) / 날짜·시간 / 메모 입력
+- 편집 및 삭제 지원 (브라우저 로컬 저장소에 영구 보관)
+
+### 🔔 능동적 알림 (Agentic Notifications)
+- **브라우저 알림**: 마감 24시간 전, 1시간 전 자동 알림
+- **Pushover 스마트폰 알림**: iOS / Android 실시간 푸시 알림
+- **캐릭터 감정 표현**: 마감까지 남은 시간에 따라 다했냥 캐릭터의 표정이 바뀝니다
+
+  | 남은 시간 | 캐릭터 표정 | 메시지 |
+  |---|---|---|
+  | 72시간 초과 | 😊 보통 | 아직 여유롭습니다 :) |
+  | 72시간 이내 | 😢 울음 | 슬슬 시작해야 합니다. |
+  | 24시간 이내 | 😠 화남 | 마감 임박! 서두르세요! |
+  | 3시간 이내 | 😇 천사 | 초인적인 힘이 필요할 때! |
+  | 마감 이후 | 💙 하트 | 제출 완료 또는 기한 만료 |
+
+### 🧪 데모 모드
+Canvas API 토큰 없이도 앱의 기능을 체험할 수 있는 **데모 모드**를 제공합니다.  
+헤더의 `Demo` 토글을 켜면 샘플 과제·시험·강의·공지사항 데이터가 즉시 표시됩니다.
+
+---
+
+## ⚙️ Agentic Workflow
+
+```
+Input (데이터 수집)
+  ├── Canvas LMS (과제, 시험, 동영상 강의, 공지)
+  └── 사용자 직접 입력 (팀플, 스터디 등)
+          ↓
+Parsing (지능적 구조화)
+  ├── 키워드 기반 카테고리 분류
+  ├── 마감 임박도 계산 (hoursLeft)
+  └── 우선순위 정렬
+          ↓
+Action (능동적 알림)
+  ├── 대시보드 재정렬 및 시각화
+  ├── 브라우저 Notification
+  └── Pushover 스마트폰 푸시 알림 (캐릭터 이미지 포함)
+```
+
+---
+
+## 🚀 개발 환경 실행
 
 ```bash
-# 의존성 설치
+# 1. 의존성 설치
 npm install
 
-# 개발 서버 실행
+# 2. 개발 서버 실행 (프론트 + 백엔드 프록시 서버 동시)
 npm run dev
-
-# 빌드
-npm run build
 ```
+
+앱은 기본적으로 `http://localhost:3000` 에서 실행됩니다.
 
 ---
 
-## 📱 스마트폰 푸시 알림 설정 (Pushover)
+## 🔧 Canvas 연동 설정
 
-웹 브라우저를 열지 않고도 노트북을 통해 스마트폰(iOS/Android)으로 직접 푸시 알림을 쏘고 싶다면 아래 파이썬 스크립트를 사용하세요.
+1. [한양대학교 Canvas](https://learning.hanyang.ac.kr) 접속
+2. **계정 > 설정 > 새 액세스 토큰 생성**
+3. 앱의 **Settings(⚙️)** 버튼 클릭 → Canvas URL과 API Access Token 입력
+4. **Save & Connect** 클릭
 
-### 1. 준비 사항
-- **Pushover 앱 설치**: 폰에 다운로드 후 가입 및 30자리 **User Key** 복사.
-- [pushover.net](https://pushover.net/) 에 로그인 후 하단에서 Application을 생성하여 **API Token** 발급.
-- Python 3 환경에서 `requests` 라이브러리 설치 (`pip install requests`)
+---
 
-### 2. 스크립트 작성 및 실행
-아래 코드를 `send_pushover.py`로 저장하세요. 소스코드 상단의 키 입력란에 위에서 확인한 토큰을 입력하고 파이썬을 실행하면 폰으로 띠링! 하고 알림이 옵니다.
+## 📱 Pushover 스마트폰 알림 설정
 
-```python
-import requests
-import sys
+1. 폰에 [Pushover 앱](https://pushover.net/) 설치 후 **User Key** 확인
+2. [pushover.net](https://pushover.net/) 에서 애플리케이션 생성 → **App Token** 발급
+3. 앱 Settings에서 App Token과 User Key 입력 후 저장
+4. **랜덤 표정 테스트** 버튼으로 알림 전송 확인
 
-# ==========================================
-# Pushover API 설정 (pushover.net 에서 발급)
-# ==========================================
-APP_TOKEN = "여기에_발급받은_APP_TOKEN_입력"
-USER_KEY = "여기에_본인의_USER_KEY_입력"
+> 💡 데모 모드가 켜진 상태에서 테스트하면 샘플 과제 데이터 기준의 알림이 전송됩니다.
 
-def send_pushover_message(title, message):
-    if APP_TOKEN.startswith("여기에_"):
-        print("🚨 오류: send_pushover.py 파일에 APP_TOKEN과 USER_KEY를 먼저 입력해주세요!")
-        return False
+---
 
-    url = "https://api.pushover.net/1/messages.json"
-    data = {
-        "token": APP_TOKEN,
-        "user": USER_KEY,
-        "title": title,
-        "message": message,
-        "sound": "pushover",
-    }
-    
-    try:
-        response = requests.post(url, data=data)
-        response.raise_for_status()
-        print("✅ 폰으로 Pushover 푸시 알림 전송 성공!")
-        return True
-    except Exception as e:
-        print(f"❌ 푸시 알림 전송 실패: {e}")
-        return False
+## 🛠️ 기술 스택
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        msg = " ".join(sys.argv[1:])
-        send_pushover_message("터미널 알림", msg)
-    else:
-        send_pushover_message("테스트 알림 🚀", "노트북에서 파이썬 스크립트로 폰에 보낸 첫 푸시 알림입니다!")
-```
+| 분류 | 기술 |
+|---|---|
+| Frontend | React 18, TypeScript, Vite |
+| Styling | Tailwind CSS, motion/react |
+| Backend | Node.js + Express (API 프록시) |
+| Auth / DB | Firebase Authentication, Firestore |
+| 알림 | Pushover API, Web Notifications API |
+| 로컬 저장 | localStorage (직접 등록한 일정) |
 
-위 템플릿과 로직을 활용해 기존의 크롤러 봇이나 다양한 과제 패치 스크립트에 이 함수 한 줄만 추가하시면 완벽한 "스마트폰 과제 알리미"를 구성할 수 있습니다.
+---
+
+## 🐱 캐릭터 소개
+
+**다했냥**은 학생의 마감 스트레스를 함께하는 감정형 AI 에이전트입니다.  
+과제 마감이 다가올수록 표정이 변하며, 능동적으로 상황을 알려줍니다.
+
+---
+
+*KIROTHON 2025 · 13조 다했냥 팀*
