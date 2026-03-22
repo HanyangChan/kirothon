@@ -1,5 +1,5 @@
 {
-  "name": "Canvas Assignment Tracker",
-  "description": "Track your Canvas LMS assignments, deadlines, and get notified before they are due.",
+  "name": "Hanyang Canvas Tracker",
+  "description": "한양대학교 학생들을 위한 Canvas 과제 관리 및 알림 도구입니다.",
   "requestFramePermissions": ["notifications"]
 }

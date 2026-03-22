@@ -381,8 +381,8 @@ export default function App() {
           className="w-full max-w-md space-y-8 text-center"
         >
           <div className="space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight text-zinc-900">Canvas Tracker</h1>
-            <p className="text-zinc-500">Never miss a deadline again. Sync your Canvas assignments and get real-time alerts.</p>
+            <h1 className="text-4xl font-bold tracking-tight text-zinc-900">Hanyang Canvas Tracker</h1>
+            <p className="text-zinc-500">한양대학교 학생들을 위한 과제 관리 도구. Canvas 과제를 동기화하고 실시간 알림을 받으세요.</p>
           </div>
           <Card className="space-y-6">
             <div className="flex justify-center">
@@ -408,7 +408,7 @@ export default function App() {
             <div className="rounded-lg bg-black p-1.5">
               <BookOpen className="h-5 w-5 text-white" />
             </div>
-            <span className="text-lg font-semibold tracking-tight">Canvas Tracker</span>
+            <span className="text-lg font-semibold tracking-tight">Hanyang Canvas Tracker</span>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)}>
@@ -578,8 +578,8 @@ export default function App() {
             >
               <Card className="space-y-6">
                 <div className="space-y-2">
-                  <h2 className="text-2xl font-bold tracking-tight">Canvas Setup</h2>
-                  <p className="text-sm text-zinc-500">Connect your Canvas LMS account to start tracking assignments.</p>
+                  <h2 className="text-2xl font-bold tracking-tight">Hanyang Canvas Setup</h2>
+                  <p className="text-sm text-zinc-500">Connect your Hanyang University Canvas account to start tracking assignments.</p>
                 </div>
                 <form onSubmit={saveSettings} className="space-y-4">
                   <div className="space-y-2">
@@ -587,8 +587,8 @@ export default function App() {
                     <input 
                       name="canvasUrl"
                       required
-                      placeholder="https://canvas.youruniversity.edu"
-                      defaultValue={settings?.canvasUrl}
+                      placeholder="https://learning.hanyang.ac.kr/"
+                      defaultValue={settings?.canvasUrl || "https://learning.hanyang.ac.kr/"}
                       className="w-full rounded-lg border border-zinc-200 px-4 py-2 text-sm focus:border-zinc-400 focus:outline-none"
                     />
                   </div>
