@@ -26,7 +26,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import axios from 'axios';
-import { format, formatDistanceToNow, isPast, parseISO, differenceInHours } from 'date-fns';
+import { format, formatDistanceToNow, isPast, parseISO, differenceInHours, addHours, addDays } from 'date-fns';
 import { 
   Bell, 
   Settings, 
@@ -38,6 +38,11 @@ import {
   RefreshCw,
   Clock,
   BookOpen,
+  Megaphone,
+  Plus,
+  Trash2,
+  Users,
+  Pencil,
   User as UserIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -53,7 +58,26 @@ function cn(...inputs: ClassValue[]) {
 interface UserSettings {
   canvasUrl: string;
   apiToken: string;
+  pushoverAppToken?: string;
+  pushoverUserKey?: string;
   notificationThresholds: number[];
+}
+
+interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  posted_at: string;
+  html_url: string;
+  context_name: string;
+}
+
+interface CustomEvent {
+  id: string;
+  title: string;
+  date: string;       // ISO string
+  description: string;
+  category: string;   // e.g. '팀플', '기타'
 }
 
 interface Assignment {
@@ -73,6 +97,31 @@ interface TrackedAssignment {
   dueAt: Timestamp;
   userId: string;
   notifiedThresholds: number[];
+}
+
+// Utility for Character Image
+function getCharacterImage(hoursLeft: number) {
+  if (hoursLeft < 0) return '/characters/heart.png';
+  if (hoursLeft <= 3) return '/characters/angel.png';
+  if (hoursLeft <= 24) return '/characters/angry.png';
+  if (hoursLeft <= 72) return '/characters/crying.png';
+  return '/characters/normal.png';
+}
+
+function getCharacterFileName(hoursLeft: number) {
+  if (hoursLeft < 0) return 'heart.png';
+  if (hoursLeft <= 3) return 'angel.png';
+  if (hoursLeft <= 24) return 'angry.png';
+  if (hoursLeft <= 72) return 'crying.png';
+  return 'normal.png';
+}
+
+function getCharacterMessage(hoursLeft: number) {
+  if (hoursLeft < 0) return '제출 완료 또는 기한 만료';
+  if (hoursLeft <= 3) return '초인적인 힘이 필요할 때!';
+  if (hoursLeft <= 24) return '마감 임박! 서두르세요!';
+  if (hoursLeft <= 72) return '슬슬 시작해야 합니다.';
+  return '아직 여유롭습니다 :)';
 }
 
 // --- Components ---
@@ -110,11 +159,31 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [trackedAssignments, setTrackedAssignments] = useState<Record<string, TrackedAssignment>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab] = useState<'setup' | 'macos'>('setup');
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [customEvents, setCustomEvents] = useState<CustomEvent[]>(() => {
+    try {
+      const stored = localStorage.getItem('kirothon_custom_events');
+      if (stored) return JSON.parse(stored) as CustomEvent[];
+    } catch {}
+    // Demo seed
+    return [{
+      id: 'ce-demo-1',
+      title: '소프트웨어공학 팀플 회의',
+      date: addDays(new Date(), 3).toISOString(),
+      description: '도서관 6층 스터디룸 2호실, 기능 분담 회의',
+      category: '팀플'
+    }];
+  });
+  const [showAddEvent, setShowAddEvent] = useState(false);
+  const [newEvent, setNewEvent] = useState({ title: '', date: '', description: '', category: '팀플' });
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<Partial<CustomEvent>>({});
 
   const nextAssignment = assignments.length > 0 ? assignments[0] : null;
 
@@ -243,7 +312,7 @@ if __name__ == "__main__":
 
   // Fetch Tracked Assignments
   useEffect(() => {
-    if (user) {
+    if (user && !isDemoMode) {
       const assignmentsRef = collection(db, 'users', user.uid, 'assignments');
       const unsubscribe = onSnapshot(assignmentsRef, (snapshot) => {
         const tracked: Record<string, TrackedAssignment> = {};
@@ -254,15 +323,91 @@ if __name__ == "__main__":
       });
       return unsubscribe;
     }
-  }, [user]);
+  }, [user, isDemoMode]);
 
   // --- Canvas API Logic ---
-  const fetchCanvasData = useCallback(async () => {
+  const fetchCanvasData = useCallback(async (overrideDemoMode?: boolean | React.MouseEvent | undefined) => {
+    const isDemo = typeof overrideDemoMode === 'boolean' ? overrideDemoMode : isDemoMode;
     if (!settings || !user) return;
     setIsRefreshing(true);
     setError(null);
 
     try {
+      if (isDemo) {
+        const now = new Date();
+        const demoAssignments: Assignment[] = [
+          {
+            id: 'demo-1',
+            name: '기계학습 중간고사 대체 과제',
+            due_at: addHours(now, 2).toISOString(),
+            course_id: 'c-1',
+            context_name: '기계학습',
+            html_url: '#',
+          },
+          {
+            id: 'demo-2',
+            name: '운영체제 5주차 동영상 강의 시청',
+            due_at: addHours(now, 18).toISOString(),
+            course_id: 'c-2',
+            context_name: '운영체제',
+            html_url: '#',
+          },
+          {
+            id: 'demo-3',
+            name: '소프트웨어공학 오프라인 시험 일정',
+            due_at: addDays(now, 2).toISOString(),
+            course_id: 'c-3',
+            context_name: '소프트웨어공학',
+            html_url: '#',
+          },
+          {
+            id: 'demo-4',
+            name: '알고리즘 챕터 3 실습 과제',
+            due_at: addDays(now, 4).toISOString(),
+            course_id: 'c-4',
+            context_name: '알고리즘',
+            html_url: '#',
+          }
+        ];
+        setAssignments(demoAssignments);
+
+        const demoAnnouncements: Announcement[] = [
+          {
+            id: 'anno-1',
+            title: '휴강 및 보강 안내 (5/5)',
+            message: '5월 5일 어린이날 휴강에 대한 보강은 5월 12일 야간에 진행됩니다.',
+            posted_at: new Date().toISOString(),
+            html_url: '#',
+            context_name: '운영체제'
+          },
+          {
+            id: 'anno-2',
+            title: '기계학습 과제 2 관련 수정사항',
+            message: '데이터셋 링크가 변경되었습니다. 최신 공지를 확인하세요.',
+            posted_at: addHours(new Date(), -12).toISOString(),
+            html_url: '#',
+            context_name: '기계학습'
+          }
+        ];
+        setAnnouncements(demoAnnouncements);
+        
+        const mockTracked: Record<string, TrackedAssignment> = {};
+        demoAssignments.forEach(a => {
+          mockTracked[a.id] = {
+            assignmentId: a.id,
+            courseId: a.course_id,
+            courseName: a.context_name || 'Demo',
+            name: a.name,
+            dueAt: Timestamp.fromDate(parseISO(a.due_at!)),
+            userId: user.uid,
+            notifiedThresholds: []
+          };
+        });
+        setTrackedAssignments(mockTracked);
+        setIsRefreshing(false);
+        return;
+      }
+
       // 1. Fetch active courses
       const coursesResponse = await axios.post('/api/canvas/proxy', {
         canvasUrl: settings.canvasUrl,
@@ -332,6 +477,37 @@ if __name__ == "__main__":
 
       setAssignments(allUpcomingAssignments);
 
+      // 4. Fetch Announcements
+      try {
+        if (courses.length > 0) {
+          const contextQuery = courses.map((c: any) => `context_codes[]=course_${c.id}`).join('&');
+          const annoRes = await axios.post('/api/canvas/proxy', {
+            canvasUrl: settings.canvasUrl,
+            apiToken: settings.apiToken,
+            endpoint: `/announcements?${contextQuery}`,
+          });
+          const rawAnnouncements = annoRes.data || [];
+          
+          const formattedAnnouncements = rawAnnouncements.map((an: any) => {
+            const courseId = an.context_code ? an.context_code.replace('course_', '') : '';
+            const courseObj = courses.find((c: any) => c.id.toString() === courseId);
+            return {
+              id: an.id,
+              title: an.title,
+              message: an.message,
+              posted_at: an.posted_at,
+              html_url: an.html_url,
+              context_name: courseObj ? (courseObj.name || courseObj.course_code) : 'Unknown Course'
+            };
+          });
+
+          formattedAnnouncements.sort((a: any, b: any) => parseISO(b.posted_at).getTime() - parseISO(a.posted_at).getTime());
+          setAnnouncements(formattedAnnouncements.slice(0, 5));
+        }
+      } catch (e: any) {
+        console.warn("Failed to fetch announcements", e);
+      }
+
       // Sync with Firestore
       for (const assignment of allUpcomingAssignments) {
         if (assignment.due_at) {
@@ -357,7 +533,7 @@ if __name__ == "__main__":
     } finally {
       setIsRefreshing(false);
     }
-  }, [settings, user, trackedAssignments]);
+  }, [settings, user, trackedAssignments, isDemoMode]);
 
   useEffect(() => {
     if (settings && user && assignments.length === 0) {
@@ -387,8 +563,18 @@ if __name__ == "__main__":
             // Send notification
             new Notification(`Assignment Due Soon!`, {
               body: `[${tracked.courseName}] ${tracked.name} is due in ${hoursLeft} hours.`,
-              icon: '/vite.svg'
+              icon: getCharacterImage(hoursLeft)
             });
+
+            if (settings.pushoverAppToken && settings.pushoverUserKey) {
+              axios.post('/api/pushover', {
+                appToken: settings.pushoverAppToken,
+                userKey: settings.pushoverUserKey,
+                title: `과제 안내: ${getCharacterMessage(hoursLeft)}`,
+                message: `과목명: ${tracked.courseName}\n과제명: ${tracked.name}\n남은 시간: ${hoursLeft}시간`,
+                imageName: getCharacterFileName(hoursLeft),
+              }).catch(console.error);
+            }
 
             // Update notified thresholds
             const assignmentRef = doc(db, 'users', user!.uid, 'assignments', tracked.assignmentId);
@@ -418,18 +604,59 @@ if __name__ == "__main__":
 
   const handleLogout = () => signOut(auth);
 
+  const saveCustomEvent = () => {
+    if (!newEvent.title.trim() || !newEvent.date) return;
+    const event: CustomEvent = {
+      id: `ce-${Date.now()}`,
+      title: newEvent.title.trim(),
+      date: new Date(newEvent.date).toISOString(),
+      description: newEvent.description.trim(),
+      category: newEvent.category || '기타'
+    };
+    const updated = [...customEvents, event].sort(
+      (a, b) => parseISO(a.date).getTime() - parseISO(b.date).getTime()
+    );
+    setCustomEvents(updated);
+    localStorage.setItem('kirothon_custom_events', JSON.stringify(updated));
+    setNewEvent({ title: '', date: '', description: '', category: '팀플' });
+    setShowAddEvent(false);
+  };
+
+  const saveEditedEvent = () => {
+    if (!editDraft.title?.trim() || !editDraft.date) return;
+    const updated = customEvents.map(e =>
+      e.id === editingEventId
+        ? { ...e, ...editDraft, title: editDraft.title!.trim(), description: editDraft.description?.trim() ?? '' }
+        : e
+    ).sort((a, b) => parseISO(a.date).getTime() - parseISO(b.date).getTime());
+    setCustomEvents(updated);
+    localStorage.setItem('kirothon_custom_events', JSON.stringify(updated));
+    setEditingEventId(null);
+    setEditDraft({});
+  };
+
+  const deleteCustomEvent = (id: string) => {
+    const updated = customEvents.filter(e => e.id !== id);
+    setCustomEvents(updated);
+    localStorage.setItem('kirothon_custom_events', JSON.stringify(updated));
+  };
+
   const saveSettings = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!user) return;
     const formData = new FormData(e.currentTarget);
     const canvasUrl = formData.get('canvasUrl') as string;
     const apiToken = formData.get('apiToken') as string;
+    const pushoverAppToken = formData.get('pushoverAppToken') as string || '';
+    const pushoverUserKey = formData.get('pushoverUserKey') as string || '';
 
     try {
       await setDoc(doc(db, 'users', user.uid, 'settings', 'current'), {
         userId: user.uid,
         canvasUrl,
         apiToken,
+        pushoverAppToken,
+        pushoverUserKey,
         notificationThresholds: [24, 1]
       });
       setShowSettings(false);
@@ -437,6 +664,52 @@ if __name__ == "__main__":
     } catch (err) {
       console.error("Save settings error:", err);
       setError("Failed to save settings.");
+    }
+  };
+
+  const handleTestPushover = async () => {
+    if (!settings?.pushoverAppToken || !settings?.pushoverUserKey) {
+      alert("App Token과 User Key를 먼저 저장해주세요.");
+      return;
+    }
+    
+    let hoursLeft = 24;
+    let label = '1일';
+    let courseName = '테스트 과목';
+    let assignName = '테스트 과제';
+
+    if (isDemoMode && assignments.length > 0) {
+      const picked = assignments[Math.floor(Math.random() * assignments.length)];
+      courseName = picked.context_name || '데모 과목';
+      assignName = picked.name;
+      if (picked.due_at) {
+        hoursLeft = differenceInHours(parseISO(picked.due_at), new Date());
+      }
+      label = `데모 데이터`;
+    } else {
+      const testOptions = [
+        { hours: 72, label: '3일' },
+        { hours: 24, label: '1일' },
+        { hours: 3, label: '3시간' }
+      ];
+      const picked = testOptions[Math.floor(Math.random() * testOptions.length)];
+      hoursLeft = picked.hours;
+      label = picked.label;
+      assignName = `${picked.label} 알림 테스트`;
+    }
+
+    try {
+      await axios.post('/api/pushover', {
+        appToken: settings.pushoverAppToken,
+        userKey: settings.pushoverUserKey,
+        title: `과제 안내: ${getCharacterMessage(hoursLeft)}`,
+        message: `과목명: ${courseName}\n과제명: ${assignName}\n남은 시간: ${hoursLeft}시간`,
+        imageName: getCharacterFileName(hoursLeft),
+      });
+      alert(`${label} 표정 알림 전송 완료! 폰을 확인해주세요.`);
+    } catch (err) {
+      console.error("Test pushover error:", err);
+      alert("알림 전송 실패. Token과 Key를 다시 확인해주세요.");
     }
   };
 
@@ -458,13 +731,13 @@ if __name__ == "__main__":
           className="w-full max-w-md space-y-8 text-center"
         >
           <div className="space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight text-zinc-900">Hanyang Canvas Tracker</h1>
-            <p className="text-zinc-500">한양대학교 학생들을 위한 과제 관리 도구. Canvas 과제를 동기화하고 실시간 알림을 받으세요.</p>
+            <h1 className="text-4xl font-bold tracking-tight text-zinc-900">다했냥</h1>
+            <p className="text-zinc-500">한양대학교 학생들을 위한 과제 알림 집사. Canvas 과제를 동기화하고 실시간 알림을 받으세요.</p>
           </div>
           <Card className="space-y-6">
             <div className="flex justify-center">
-              <div className="rounded-full bg-zinc-100 p-4">
-                <Bell className="h-12 w-12 text-zinc-900" />
+              <div className="rounded-3xl overflow-hidden drop-shadow-sm border-2 border-zinc-100">
+                <img src="/characters/normal.png" alt="다했냥" className="h-24 w-24 object-cover" />
               </div>
             </div>
             <Button onClick={handleLogin} className="w-full py-6 text-lg">
@@ -476,18 +749,52 @@ if __name__ == "__main__":
     );
   }
 
+  const exams = assignments.filter((a) => a.name.match(/시험|고사|퀴즈|quiz|exam|midterm|final/i));
+  const lectures = assignments.filter((a) => a.name.match(/동영상|강의|강좌|시청|video|lecture|e-learning|이러닝/i) && !a.name.match(/시험|고사|퀴즈|quiz|exam|midterm|final/i));
+  const regularAssignments = assignments.filter((a) => !exams.includes(a) && !lectures.includes(a));
+
+  const sections = [
+    { id: 'exams', title: '시험 및 퀴즈', items: exams, icon: <BookOpen className="h-5 w-5 text-indigo-500" /> },
+    { id: 'lectures', title: '동영상 강의', items: lectures, icon: <Clock className="h-5 w-5 text-blue-500" /> },
+    { id: 'assignments', title: '일반 과제', items: regularAssignments, icon: <CheckCircle2 className="h-5 w-5 text-emerald-500" /> }
+  ];
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900">
       {/* Header */}
       <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-2">
-            <div className="rounded-lg bg-black p-1.5">
-              <BookOpen className="h-5 w-5 text-white" />
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl overflow-hidden shadow-sm shrink-0">
+              <img src="/characters/normal.png" alt="다했냥" className="h-8 w-8 object-cover" />
             </div>
-            <span className="text-lg font-semibold tracking-tight">Hanyang Canvas Tracker</span>
+            <span className="text-xl font-black tracking-tight">다했냥</span>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mr-2 bg-zinc-100 p-1.5 rounded-lg border border-zinc-200">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Demo</span>
+              <button
+                onClick={() => {
+                  const newMode = !isDemoMode;
+                  setIsDemoMode(newMode);
+                  fetchCanvasData(newMode);
+                }}
+                className={cn(
+                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2",
+                  isDemoMode ? "bg-emerald-500" : "bg-zinc-300"
+                )}
+                role="switch"
+                aria-checked={isDemoMode}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                    isDemoMode ? "translate-x-4" : "translate-x-0"
+                  )}
+                />
+              </button>
+            </div>
             <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)}>
               <Settings className="h-5 w-5" />
             </Button>
@@ -552,9 +859,10 @@ if __name__ == "__main__":
                   Go to Assignment
                 </a>
               </div>
-              {/* Decorative Background Element */}
-              <div className="absolute -right-12 -top-12 h-64 w-64 rounded-full bg-orange-500/10 blur-3xl" />
-              <div className="absolute -bottom-12 -left-12 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl" />
+              {/* Character Image Element */}
+              <div className="absolute -right-8 -bottom-12 w-48 h-48 sm:w-80 sm:h-80 opacity-95 transition-transform hover:scale-105 pointer-events-none drop-shadow-2xl">
+                <img src={getCharacterImage(nextAssignment.due_at ? differenceInHours(parseISO(nextAssignment.due_at), new Date()) : 100)} alt="character" className="w-full h-full object-contain drop-shadow-2xl" />
+              </div>
             </div>
           </motion.div>
         )}
@@ -565,108 +873,363 @@ if __name__ == "__main__":
           <div className="space-y-6 lg:col-span-1">
             <Card className="space-y-4">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Overview</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-2xl font-bold">{assignments.length}</p>
-                  <p className="text-xs text-zinc-500">Pending Tasks</p>
+              {assignments.length === 0 ? (
+                <p className="text-sm text-zinc-500">No pending tasks.</p>
+              ) : (
+                <div className="space-y-4">
+                  {assignments.slice(0, 4).map((assignment, idx) => (
+                    <div key={idx} className="flex flex-col gap-1 border-b border-zinc-100 pb-3 last:border-0 last:pb-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{assignment.context_name}</span>
+                      </div>
+                      <a href={assignment.html_url} target="_blank" rel="noopener noreferrer" className="font-medium text-sm text-zinc-900 hover:text-blue-600 transition-colors line-clamp-2">
+                        {assignment.name}
+                      </a>
+                      <div className="flex items-center gap-2 text-xs text-zinc-500">
+                        <Clock className="h-3 w-3" />
+                        <span className={cn(
+                          "font-medium",
+                          assignment.due_at && differenceInHours(parseISO(assignment.due_at), new Date()) < 24 ? "text-orange-600" : ""
+                        )}>
+                          {assignment.due_at ? formatDistanceToNow(parseISO(assignment.due_at), { addSuffix: true }) : 'No deadline'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="space-y-1">
-                  <p className="text-2xl font-bold text-emerald-600">
-                    {(Object.values(trackedAssignments) as TrackedAssignment[]).filter(a => isPast(a.dueAt.toDate())).length}
-                  </p>
-                  <p className="text-xs text-zinc-500">Completed</p>
-                </div>
+              )}
+              <div className="pt-2">
+                <Button 
+                  variant="outline" 
+                  className="w-full gap-2" 
+                  onClick={fetchCanvasData}
+                  disabled={isRefreshing}
+                >
+                  <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                  {isRefreshing ? 'Syncing...' : 'Sync Now'}
+                </Button>
               </div>
-              <Button 
-                variant="outline" 
-                className="w-full gap-2" 
-                onClick={fetchCanvasData}
-                disabled={isRefreshing}
-              >
-                <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-                {isRefreshing ? 'Syncing...' : 'Sync Now'}
-              </Button>
             </Card>
 
             <Card className="space-y-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Quick Tips</h2>
-              <ul className="space-y-3 text-sm text-zinc-600">
-                <li className="flex gap-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                  <span>Notifications are sent 24h and 1h before deadlines.</span>
-                </li>
-                <li className="flex gap-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                  <span>Keep this tab open for real-time alerts.</span>
-                </li>
-              </ul>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">Recent Announcements</h2>
+              {announcements.length === 0 ? (
+                <p className="text-sm text-zinc-500">No recent announcements.</p>
+              ) : (
+                <div className="space-y-4">
+                  {announcements.map((ann, idx) => (
+                    <div key={idx} className="flex flex-col gap-1 border-b border-zinc-100 pb-3 last:border-0 last:pb-0">
+                      <div className="flex items-center gap-2">
+                        <Megaphone className="h-3 w-3 text-orange-500 shrink-0" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{ann.context_name}</span>
+                      </div>
+                      <a href={ann.html_url} target="_blank" rel="noopener noreferrer" className="font-medium text-sm text-zinc-900 hover:text-blue-600 transition-colors line-clamp-2">
+                        {ann.title}
+                      </a>
+                      <span className="text-xs text-zinc-400">
+                        {formatDistanceToNow(parseISO(ann.posted_at), { addSuffix: true })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
           </div>
 
           {/* Right Column: Assignment List */}
           <div className="space-y-6 lg:col-span-2">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold tracking-tight">Upcoming Assignments</h2>
+              <h2 className="text-xl font-bold tracking-tight">Upcoming Tasks</h2>
               <div className="flex items-center gap-2 text-sm text-zinc-500">
                 <Calendar className="h-4 w-4" />
                 <span>{format(new Date(), 'MMM d, yyyy')}</span>
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-8">
               {assignments.length === 0 && !isRefreshing ? (
                 <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-white py-12 text-center">
                   <div className="mb-4 rounded-full bg-zinc-50 p-4">
                     <CheckCircle2 className="h-8 w-8 text-zinc-300" />
                   </div>
-                  <p className="text-zinc-500">All caught up! No upcoming assignments found.</p>
+                  <p className="text-zinc-500">All caught up! No upcoming tasks found.</p>
+                </div>
+              ) : (
+                sections.map(section => section.items.length > 0 && (
+                  <div key={section.id} className="space-y-4">
+                    <div className="flex items-center gap-2 border-b border-zinc-200 pb-2">
+                       {section.icon}
+                       <h3 className="text-lg font-bold text-zinc-900">{section.title}</h3>
+                       <span className="ml-2 rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-600">{section.items.length}</span>
+                    </div>
+                    <div className="space-y-4">
+                      <AnimatePresence mode="popLayout">
+                        {section.items.map((assignment, idx) => (
+                          <motion.div
+                            key={assignment.id}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.05 }}
+                          >
+                            <Card className="group relative flex flex-col gap-4 transition-all hover:border-zinc-300 sm:flex-row sm:items-center sm:justify-between p-4 sm:p-5">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-zinc-600">
+                                    {assignment.context_name}
+                                  </span>
+                                </div>
+                                <h3 className="font-semibold text-zinc-900">{assignment.name}</h3>
+                                <div className="flex items-center gap-4 text-xs text-zinc-500">
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    <span>
+                                      {assignment.due_at 
+                                        ? format(parseISO(assignment.due_at), 'MMM d, h:mm a')
+                                        : 'No deadline'}
+                                    </span>
+                                  </div>
+                                  {assignment.due_at && (
+                                    <div className={cn(
+                                      "font-medium",
+                                      differenceInHours(parseISO(assignment.due_at), new Date()) < 24 ? "text-orange-600" : "text-zinc-500"
+                                    )}>
+                                      {formatDistanceToNow(parseISO(assignment.due_at), { addSuffix: true })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <a 
+                                  href={assignment.html_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-900"
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                </a>
+                              </div>
+                            </Card>
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Custom Events Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-violet-500" />
+                  <h3 className="text-lg font-bold text-zinc-900">직접 등록한 일정</h3>
+                  <span className="ml-2 rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-600">{customEvents.length}</span>
+                </div>
+                <button
+                  onClick={() => setShowAddEvent(v => !v)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-100 transition-colors"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  일정 추가
+                </button>
+              </div>
+
+              <AnimatePresence>
+                {showAddEvent && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                  >
+                    <Card className="p-4 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">제목</label>
+                          <input
+                            value={newEvent.title}
+                            onChange={e => setNewEvent(v => ({ ...v, title: e.target.value }))}
+                            placeholder="팀플 회의, 발표 준비 등"
+                            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">카테고리</label>
+                          <select
+                            value={newEvent.category}
+                            onChange={e => setNewEvent(v => ({ ...v, category: e.target.value }))}
+                            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                          >
+                            <option>팀플</option>
+                            <option>발표</option>
+                            <option>스터디</option>
+                            <option>기타</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">날짜/시간</label>
+                          <input
+                            type="datetime-local"
+                            value={newEvent.date}
+                            onChange={e => setNewEvent(v => ({ ...v, date: e.target.value }))}
+                            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                          />
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">메모 (선택)</label>
+                          <input
+                            value={newEvent.description}
+                            onChange={e => setNewEvent(v => ({ ...v, description: e.target.value }))}
+                            placeholder="장소, 준비물 등"
+                            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <Button variant="outline" className="flex-1" onClick={() => setShowAddEvent(false)}>취소</Button>
+                        <Button className="flex-1" onClick={saveCustomEvent}>저장</Button>
+                      </div>
+                    </Card>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {customEvents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-white py-8 text-center">
+                  <Users className="h-7 w-7 text-zinc-300 mb-2" />
+                  <p className="text-sm text-zinc-500">등록된 일정이 없습니다.</p>
                 </div>
               ) : (
                 <AnimatePresence mode="popLayout">
-                  {assignments.map((assignment, idx) => (
+                  {customEvents.map((ev, idx) => (
                     <motion.div
-                      key={assignment.id}
+                      key={ev.id}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.05 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      transition={{ delay: idx * 0.04 }}
                     >
-                      <Card className="group relative flex flex-col gap-4 transition-all hover:border-zinc-300 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-zinc-600">
-                              {assignment.context_name}
-                            </span>
-                          </div>
-                          <h3 className="font-semibold text-zinc-900">{assignment.name}</h3>
-                          <div className="flex items-center gap-4 text-xs text-zinc-500">
-                            <div className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              <span>
-                                {assignment.due_at 
-                                  ? format(parseISO(assignment.due_at), 'MMM d, h:mm a')
-                                  : 'No deadline'}
+                      <Card className="flex flex-col gap-2 p-4 sm:p-5 transition-all hover:border-zinc-300">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-700">
+                                {ev.category}
                               </span>
                             </div>
-                            {assignment.due_at && (
-                              <div className={cn(
-                                "font-medium",
-                                differenceInHours(parseISO(assignment.due_at), new Date()) < 24 ? "text-orange-600" : "text-zinc-500"
-                              )}>
-                                {formatDistanceToNow(parseISO(assignment.due_at), { addSuffix: true })}
-                              </div>
+                            <h3 className="font-semibold text-zinc-900">{ev.title}</h3>
+                            {ev.description && (
+                              <p className="text-xs text-zinc-500 line-clamp-1">{ev.description}</p>
                             )}
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <Clock className="h-3 w-3" />
+                              <span>{format(parseISO(ev.date), 'MM월 dd일 HH:mm')}</span>
+                              <span className={cn(
+                                "font-medium",
+                                differenceInHours(parseISO(ev.date), new Date()) < 24 ? "text-orange-600" : "text-zinc-400"
+                              )}>
+                                ({formatDistanceToNow(parseISO(ev.date), { addSuffix: true })})
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <a 
-                            href={assignment.html_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-900"
+                          <button
+                            onClick={() => {
+                              if (editingEventId === ev.id) {
+                                setEditingEventId(null);
+                                setEditDraft({});
+                              } else {
+                                setEditingEventId(ev.id);
+                                setEditDraft({
+                                  title: ev.title,
+                                  date: ev.date,
+                                  description: ev.description,
+                                  category: ev.category
+                                });
+                              }
+                            }}
+                            className={cn(
+                              "shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+                              editingEventId === ev.id
+                                ? "bg-violet-100 text-violet-700"
+                                : "text-zinc-300 hover:text-violet-500 hover:bg-violet-50"
+                            )}
                           >
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
+                            <Pencil className="h-4 w-4" />
+                          </button>
                         </div>
+                        <AnimatePresence>
+                          {editingEventId === ev.id && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="mt-3 grid grid-cols-2 gap-3 border-t border-zinc-100 pt-3">
+                                <div className="col-span-2 space-y-1">
+                                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">제목</label>
+                                  <input
+                                    value={editDraft.title ?? ''}
+                                    onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))}
+                                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">카테고리</label>
+                                  <select
+                                    value={editDraft.category ?? '팀플'}
+                                    onChange={e => setEditDraft(d => ({ ...d, category: e.target.value }))}
+                                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                                  >
+                                    <option>팀플</option>
+                                    <option>발표</option>
+                                    <option>스터디</option>
+                                    <option>기타</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">날짜/시간</label>
+                                  <input
+                                    type="datetime-local"
+                                    value={editDraft.date ? editDraft.date.slice(0, 16) : ''}
+                                    onChange={e => setEditDraft(d => ({ ...d, date: new Date(e.target.value).toISOString() }))}
+                                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                                  />
+                                </div>
+                                <div className="col-span-2 space-y-1">
+                                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">메모</label>
+                                  <input
+                                    value={editDraft.description ?? ''}
+                                    onChange={e => setEditDraft(d => ({ ...d, description: e.target.value }))}
+                                    placeholder="장소, 준비물 등"
+                                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  onClick={() => { deleteCustomEvent(ev.id); setEditingEventId(null); }}
+                                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                                >
+                                  삭제
+                                </button>
+                                <div className="flex-1" />
+                                <button
+                                  onClick={() => { setEditingEventId(null); setEditDraft({}); }}
+                                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 transition-colors"
+                                >
+                                  취소
+                                </button>
+                                <button
+                                  onClick={saveEditedEvent}
+                                  className="rounded-lg bg-zinc-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 transition-colors"
+                                >
+                                  저장
+                                </button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </Card>
                     </motion.div>
                   ))}
@@ -748,13 +1311,39 @@ if __name__ == "__main__":
                             Find this in Canvas: Account &gt; Settings &gt; New Access Token
                           </p>
                         </div>
+                        <div className="space-y-4 pt-4 border-t border-zinc-100">
+                          <h3 className="text-sm font-bold">Pushover 스마트폰 알림 (선택)</h3>
+                          <div className="space-y-2">
+                            <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">App Token</label>
+                            <input 
+                              name="pushoverAppToken"
+                              placeholder="Pushover App Token"
+                              defaultValue={settings?.pushoverAppToken || ""}
+                              className="w-full rounded-lg border border-zinc-200 px-4 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">User Key</label>
+                            <input 
+                              name="pushoverUserKey"
+                              placeholder="Pushover User Key"
+                              defaultValue={settings?.pushoverUserKey || ""}
+                              className="w-full rounded-lg border border-zinc-200 px-4 py-2 text-sm focus:border-zinc-400 focus:outline-none"
+                            />
+                          </div>
+                        </div>
                         <div className="flex gap-3 pt-2">
                           {settings && (
-                            <Button type="button" variant="outline" className="flex-1" onClick={() => setShowSettings(false)}>
-                              Cancel
-                            </Button>
+                            <>
+                              <Button type="button" variant="outline" className="flex-1" onClick={() => setShowSettings(false)}>
+                                Cancel
+                              </Button>
+                              <Button type="button" variant="secondary" className="flex-1" onClick={handleTestPushover}>
+                                랜덤 표정 테스트
+                              </Button>
+                            </>
                           )}
-                          <Button type="submit" className="flex-1">
+                          <Button type="submit" className="flex-1 border border-zinc-900">
                             Save & Connect
                           </Button>
                         </div>
